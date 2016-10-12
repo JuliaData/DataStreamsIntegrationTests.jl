@@ -2,7 +2,7 @@ module DataStreamsIntegrationTests
 
 using DataStreams, Base.Test
 
-const DSTESTDIR = joinpath(dirname(@__FILE__), "../test")
+const DSTESTDIR = joinpath(dirname(dirname(@__FILE__)), "test")
 
 export Tester, scalartransforms, vectortransforms, DSTESTDIR
 
