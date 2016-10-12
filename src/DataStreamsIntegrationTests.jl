@@ -1,10 +1,15 @@
 module DataStreamsIntegrationTests
 
-export Tester, scalartransforms, vectortransforms
+using DataStreams, Base.Test
+
+const DSTESTDIR = joinpath(dirname(@__FILE__), "../test")
+
+export Tester, scalartransforms, vectortransforms, DSTESTDIR
 
 type Tester
     name::String
     highlevel::Function
+    hashighlevel::Bool
     constructor::DataType
     args::Tuple
     scalartransforms::Dict
@@ -12,19 +17,6 @@ type Tester
     sinktodf::Function
     cleanup::Function
 end
-
-installed = Pkg.installed()
-
-haskey(installed, "DataStreams") || Pkg.clone("DataStreams")
-using DataStreams
-
-PKGS = ["DataFrames", "CSV", "SQLite", "Feather", "ODBC"]
-
-for pkg in PKGS
-    haskey(installed, pkg) || Pkg.clone(pkg)
-end
-
-using Base.Test, DataStreams, DataFrames, CSV, SQLite, Feather, ODBC
 
 # transforms
 incr{T}(x::T) = x + 1
@@ -57,11 +49,7 @@ typequal{T,S}(::Type{Nullable{T}}, ::Type{Nullable{S}}) = typequal(T, S)
 typequal{T,S}(::Type{Nullable{T}}, ::Type{S}) = typequal(T, S)
 typequal{T,S}(::Type{T}, ::Type{Nullable{S}}) = typequal(T, S)
 typequal(a, b) = (a <: AbstractString && b <: AbstractString) ||
-                 (a <: Integer && b <: Integer) ||
-                 (a == ODBC.API.SQLDate && b == Date) ||
-                 (a == Date && b == ODBC.API.SQLDate) ||
-                 (a == ODBC.API.SQLTimestamp && b == DateTime) ||
-                 (a == DateTime && b == ODBC.API.SQLTimestamp)
+                 (a <: Integer && b <: Integer)
 
 testnull{T}(v1::T, v2::T) = v1 == v2
 testnull{T}(v1::Nullable{T}, v2::Nullable{T}) = (isnull(v1) && isnull(v2)) || (!isnull(v1) && !isnull(v2) && get(v1) == get(v2))
@@ -115,6 +103,156 @@ function check(df, appended=false, transformed=false)
         @test isnull(df[end, 5])
         @test testnull(df[end, 6], Date(2008, 6, 23))
         @test testnull(df[end, 7], DateTime(2005, 4, 18, 7, 2, 0))
+    end
+end
+
+function teststream(sources, sinks)
+    for source in sources
+        for sink in sinks
+            try
+            if source.hashighlevel
+            println("[$(now())]: Test high-level from source to sink; e.g. CSV.read")
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name) args")
+            si = source.highlevel(source.args..., sink.constructor, sink.args...)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name) args + append")
+            si = source.highlevel(source.args..., sink.constructor, sink.args...; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name) args + transforms")
+            si = source.highlevel(source.args..., sink.constructor, sink.args...; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name) args + append + transforms")
+            si = source.highlevel(source.args..., sink.constructor, sink.args...; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name)")
+            sinst = sink.constructor(sink.args...)
+            si = source.highlevel(source.args..., sinst)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name) + append")
+            sinst = sink.constructor(sink.args...; append=true)
+            si = source.highlevel(source.args..., sinst; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name) + transforms")
+            sinst = sink.constructor(sink.args...)
+            si = source.highlevel(source.args..., sinst; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Source: $(source.name) args => Sink: $(sink.name) + append + transforms`")
+            sinst = sink.constructor(sink.args...; append=true)
+            si = source.highlevel(source.args..., sinst; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name) args")
+            soinst = source.constructor(source.args...)
+            si = source.highlevel(soinst, sink.constructor, sink.args...)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name) args + append")
+            soinst = source.constructor(source.args...)
+            si = source.highlevel(soinst, sink.constructor, sink.args...; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name) args + transforms")
+            soinst = source.constructor(source.args...)
+            si = source.highlevel(soinst, sink.constructor, sink.args...; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name) args + append + transforms")
+            soinst = source.constructor(source.args...)
+            si = source.highlevel(soinst, sink.constructor, sink.args...; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name)")
+            soinst = source.constructor(source.args...)
+            sinst = sink.constructor(sink.args...)
+            si = source.highlevel(soinst, sinst)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name) + append")
+            soinst = source.constructor(source.args...)
+            sinst = sink.constructor(sink.args...; append=true)
+            si = source.highlevel(soinst, sinst; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name) + transforms")
+            soinst = source.constructor(source.args...)
+            sinst = sink.constructor(sink.args...)
+            si = source.highlevel(soinst, sinst; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Source: $(source.name) => Sink: $(sink.name) + append + transforms")
+            soinst = source.constructor(source.args...)
+            sinst = sink.constructor(sink.args...; append=true)
+            si = source.highlevel(soinst, sinst; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            end
+
+            if sink.hashighlevel
+            println("[$(now())]: Test high-level to sink from source; e.g. CSV.write")
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name) args")
+            si = sink.highlevel(sink.args..., source.constructor, source.args...)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name) args + append")
+            si = sink.highlevel(sink.args..., source.constructor, source.args...; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name) args + transforms")
+            si = sink.highlevel(sink.args..., source.constructor, source.args...; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name) args + append + transforms")
+            si = sink.highlevel(sink.args..., source.constructor, source.args...; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) args")
+            sinst = sink.constructor(sink.args...)
+            si = sink.highlevel(sinst, source.constructor, source.args...)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) args + append")
+            sinst = sink.constructor(sink.args...; append=true)
+            si = sink.highlevel(sinst, source.constructor, source.args...; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) args + transforms")
+            sinst = sink.constructor(sink.args...)
+            si = sink.highlevel(sinst, source.constructor, source.args...; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) args + append + transforms`")
+            sinst = sink.constructor(sink.args...; append=true)
+            si = sink.highlevel(sinst, source.constructor, source.args...; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name)")
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sink.args..., soinst)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name) + append")
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sink.args..., soinst; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name) + transforms")
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sink.args..., soinst; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Sink: $(sink.name) args => Source: $(source.name) + append + transforms")
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sink.args..., soinst; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name)")
+            sinst = sink.constructor(sink.args...)
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sinst, soinst)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si))
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) + append")
+            sinst = sink.constructor(sink.args...; append=true)
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sinst, soinst; append=true)
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true)
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) + transforms")
+            sinst = sink.constructor(sink.args...)
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sinst, soinst; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), false, true)
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) + append + transforms")
+            sinst = sink.constructor(sink.args...; append=true)
+            soinst = source.constructor(source.args...)
+            si = sink.highlevel(sinst, soinst; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
+            DataStreamsIntegrationTests.check(sink.sinktodf(si), true, true)
+            println("done")
+            end
+            catch e
+                rethrow(e)
+            finally
+            println("[$(now())]: cleanup")
+            sink.cleanup(sink.args...)
+            end
+        end
     end
 end
 
