@@ -106,7 +106,7 @@ function check(df, rows, appended=false, transformed=false)
     end
 end
 
-function teststream(sources, sinks; rows=7000)
+function teststream(sources, sinks; rows=70000)
     for source in sources
         for sink in sinks
             try
@@ -244,12 +244,11 @@ function teststream(sources, sinks; rows=7000)
             soinst = source.constructor(source.args...)
             si = sink.highlevel(sinst, soinst; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
             DataStreamsIntegrationTests.check(sink.sinktodf(si), rows, true, true)
-            println("done")
+            println("[$(now())]: finished...")
             end
             catch e
                 rethrow(e)
             finally
-            println("[$(now())]: cleanup")
             sink.cleanup(sink.args...)
             end
         end
