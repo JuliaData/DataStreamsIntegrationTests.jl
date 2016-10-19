@@ -1,6 +1,6 @@
 module DataStreamsIntegrationTests
 
-using DataStreams, Base.Test
+using DataStreams, NullableArrays, Base.Test
 
 const DSTESTDIR = joinpath(dirname(dirname(@__FILE__)), "test")
 
@@ -32,7 +32,7 @@ div2{T}(x::T) = x / 2
 div2{T}(x::Nullable{T}) = isnull(x) ? Nullable{T}() : Nullable{T}(div2(get(x)))
 
 scalartransforms = Dict{String, Function}("id"=> incr, "firstname"=> doe_ify, "lastname"=> getlength, "salary"=> div2)
-vectortransforms = Dict{String, Function}("id"=> x->[incr(i) for i in x], "firstname"=> x->[doe_ify(i) for i in x], "lastname"=> x->[getlength(i) for i in x], "salary"=> x->[div2(i) for i in x])
+vectortransforms = Dict{String, Function}("id"=> x->NullableArray([incr(i) for i in x]), "firstname"=> x->NullableArray([doe_ify(i) for i in x]), "lastname"=> x->NullableArray([getlength(i) for i in x]), "salary"=> x->NullableArray([div2(i) for i in x]))
 
 function gettransforms(source, sink)
     streamtypes = Data.streamtypes(sink.constructor)
