@@ -1,7 +1,7 @@
 # DataStreamsIntegrationTests
 
-[![Build Status](https://travis-ci.org/quinnj/DataStreamsIntegrationTests.jl.svg?branch=master)](https://travis-ci.org/quinnj/DataStreamsIntegrationTests.jl)
+A package for providing infrastructure and common code for running integration tests between `Data.Source` and `Data.Sink` types.
 
-[![Coverage Status](https://coveralls.io/repos/quinnj/DataStreamsIntegrationTests.jl/badge.svg?branch=master&service=github)](https://coveralls.io/github/quinnj/DataStreamsIntegrationTests.jl?branch=master)
+[![Build Status](https://travis-ci.org/quinnj/DataStreamsIntegrationTests.jl.svg?branch=master)](https://travis-ci.org/quinnj/DataStreamsIntegrationTests.jl)
 
 [![codecov.io](http://codecov.io/github/quinnj/DataStreamsIntegrationTests.jl/coverage.svg?branch=master)](http://codecov.io/github/quinnj/DataStreamsIntegrationTests.jl?branch=master)
