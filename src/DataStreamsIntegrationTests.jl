@@ -49,7 +49,8 @@ typequal{T,S}(::Type{Nullable{T}}, ::Type{Nullable{S}}) = typequal(T, S)
 typequal{T,S}(::Type{Nullable{T}}, ::Type{S}) = typequal(T, S)
 typequal{T,S}(::Type{T}, ::Type{Nullable{S}}) = typequal(T, S)
 typequal(a, b) = (a <: AbstractString && b <: AbstractString) ||
-                 (a <: Integer && b <: Integer)
+                 (a <: Integer && b <: Integer) ||
+                 (a <: Dates.AbstractTime && b <: Dates.AbstractTime)
 
 testnull{T}(v1::T, v2::T) = v1 == v2
 testnull{T}(v1::Nullable{T}, v2::Nullable{T}) = (isnull(v1) && isnull(v2)) || (!isnull(v1) && !isnull(v2) && get(v1) == get(v2))
