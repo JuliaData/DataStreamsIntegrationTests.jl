@@ -1,6 +1,6 @@
 module DataStreamsIntegrationTests
 
-using DataStreams, NullableArrays, Base.Test
+using DataStreams, Nulls, Base.Test
 
 const DSTESTDIR = joinpath(dirname(dirname(@__FILE__)), "test")
 
@@ -10,7 +10,7 @@ type Tester
     name::String
     highlevel::Function
     hashighlevel::Bool
-    constructor::DataType
+    constructor::Type
     args::Tuple
     scalartransforms::Dict
     vectortransforms::Dict
@@ -19,20 +19,20 @@ type Tester
 end
 
 # transforms
-incr{T}(x::T) = x + 1
-incr{T}(x::Nullable{T}) = isnull(x) ? Nullable{T}() : Nullable{T}(incr(get(x)))
+incr(x) = x + 1
+incr(::Null) = null
 
-doe_ify{T}(x::T) = string(x, " Doe")
-doe_ify{T}(x::Nullable{T}) = isnull(x) ? Nullable{String}() : Nullable{String}(doe_ify(get(x)))
+doe_ify(x) = string(x, " Doe")
+doe_ify(::Null) = null
 
 getlength(x) = length(x)
-getlength(x::Nullable) = isnull(x) ? Nullable{Int}() : Nullable{Int}(getlength(get(x)))
+getlength(x::Null) = null
 
-div2{T}(x::T) = x / 2
-div2{T}(x::Nullable{T}) = isnull(x) ? Nullable{T}() : Nullable{T}(div2(get(x)))
+div2(x) = x / 2
+div2(x::Null) = null
 
 scalartransforms = Dict{String, Function}("id"=> incr, "firstname"=> doe_ify, "lastname"=> getlength, "salary"=> div2)
-vectortransforms = Dict{String, Function}("id"=> x->NullableArray([incr(i) for i in x]), "firstname"=> x->NullableArray([doe_ify(i) for i in x]), "lastname"=> x->NullableArray([getlength(i) for i in x]), "salary"=> x->NullableArray([div2(i) for i in x]))
+vectortransforms = Dict{String, Function}("id"=> x->[incr(i) for i in x], "firstname"=> x->[doe_ify(i) for i in x], "lastname"=> x->[getlength(i) for i in x], "salary"=> x->[div2(i) for i in x])
 
 function gettransforms(source, sink)
     streamtypes = Data.streamtypes(sink.constructor)
@@ -44,68 +44,61 @@ function gettransforms(source, sink)
 end
 
 # tests
-typequal{T}(::Type{T}, ::Type{T}) = true
-typequal{T,S}(::Type{Nullable{T}}, ::Type{Nullable{S}}) = typequal(T, S)
-typequal{T,S}(::Type{Nullable{T}}, ::Type{S}) = typequal(T, S)
-typequal{T,S}(::Type{T}, ::Type{Nullable{S}}) = typequal(T, S)
-typequal(a, b) = (a <: AbstractString && b <: AbstractString) ||
-                 (a <: Integer && b <: Integer) ||
-                 (a <: Dates.AbstractTime && b <: Dates.AbstractTime)
-
-testnull{T}(v1::T, v2::T) = v1 == v2
-testnull{T}(v1::Nullable{T}, v2::Nullable{T}) = (isnull(v1) && isnull(v2)) || (!isnull(v1) && !isnull(v2) && get(v1) == get(v2))
-testnull{T}(v1::T, v2::Nullable{T}) = !isnull(v2) && get(v2) == v1
-testnull{T}(v1::Nullable{T}, v2::T) = !isnull(v1) && get(v1) == v2
-testnull{T, S}(v1::T, v2::Nullable{S}) = !isnull(v2) && get(v2) == v1
-testnull{T, S}(v1::Nullable{T}, v2::S) = !isnull(v1) && get(v1) == v2
-testnull{T, S}(v1::Nullable{T}, v2::Nullable{S}) = (isnull(v1) && isnull(v2)) || (!isnull(v1) && !isnull(v2) && get(v1) == get(v2))
-testnull{T, S}(v1::T, v2::S) = v1 == v2
+typequal(::Type{T}, ::Type{T}) where {T} = true
+typequal(::Type{Union{T, Null}}, ::Type{Union{S, Null}}) where {T,S} = typequal(T, S)
+typequal(::Type{Union{T, Null}}, ::Type{S}) where {T,S} = typequal(T, S)
+typequal(a, b) = (a <: ?AbstractString && b <: ?AbstractString) ||
+                 (a <: ?Integer && b <: ?Integer) ||
+                 (a <: ?Dates.TimeType && b <: ?Dates.TimeType)
 
 function check(df, rows, appended=false, transformed=false)
     # test size
     cols, rows = 7, appended ? rows * 2 : rows
-    @test size(df) == (rows,cols)
+    @test size(Data.schema(df)) == (rows, cols)
 
     # test types
     expected_types = transformed ? [Int, String, Int, Float64, Float64, Date, DateTime] : [Int, String, String, Float64, Float64, Date, DateTime]
-    types = Data.types(df, Data.Field)
-    @test all([typequal(types[i], expected_types[i]) for i = 1:length(types)])
+    types = Data.types(Data.schema(df))
+    @test all([DataStreamsIntegrationTests.typequal(types[i], expected_types[i]) for i = 1:length(types)])
 
     # test values
     if transformed
-        @test testnull(df[1, 1], 2)
-        @test testnull(df[1, 2], "Lawrence Doe")
-        @test testnull(df[1, 3], length("Powell"))
-        @test isapprox(typeof(df[1, 4]) <: Nullable ? get(df[1, 4]) : df[1, 4], 87216.8 / 2; atol=0.01)
-        @test isapprox(typeof(df[1, 5]) <: Nullable ? get(df[1, 5]) : df[1, 5], 26.47; atol=0.01)
-        @test testnull(df[1, 6], Date(2002, 4, 9))
-        @test testnull(df[1, 7], DateTime(2002, 1, 17, 21, 32, 0))
+        @test df[1, 1] == 2
+        @test df[1, 2] == "Lawrence Doe"
+        @test df[1, 3] == length("Powell")
+        @test isapprox(df[1, 4], 87216.8 / 2; atol=0.01)
+        @test isapprox(df[1, 5], 26.47; atol=0.01)
+        @test df[1, 6] == Date(2002, 4, 9)
+        @test df[1, 7] == DateTime(2002, 1, 17, 21, 32, 0)
 
-        @test testnull(df[end, 1], 70001)
-        @test testnull(df[end, 2], "Craig Doe")
-        @test testnull(df[end, 3], length("Robertson"))
-        @test isnull(df[end, 4])
-        @test isnull(df[end, 5])
-        @test testnull(df[end, 6], Date(2008, 6, 23))
-        @test testnull(df[end, 7], DateTime(2005, 4, 18, 7, 2, 0))
+        @test df[end, 1] == 70001
+        @test df[end, 2] == "Craig Doe"
+        @test df[end, 3] == length("Robertson")
+        @test isapprox(df[end, 4], 33699.215; atol=0.01)
+        @test isapprox(df[end, 5], 23.99; atol=0.01)
+        @test df[end, 6] == Date(2008, 6, 23)
+        @test df[end, 7] == DateTime(2005, 4, 18, 7, 2, 0)
     else
-        @test testnull(df[1, 1], 1)
-        @test testnull(df[1, 2], "Lawrence")
-        @test testnull(df[1, 3], "Powell")
-        @test isapprox(typeof(df[1, 4]) <: Nullable ? get(df[1, 4]) : df[1, 4], 87216.8; atol=0.01)
-        @test isapprox(typeof(df[1, 5]) <: Nullable ? get(df[1, 5]) : df[1, 5], 26.47; atol=0.01)
-        @test testnull(df[1, 6], Date(2002, 4, 9))
-        @test testnull(df[1, 7], DateTime(2002, 1, 17, 21, 32, 0))
+        @test df[1, 1] == 1
+        @test df[1, 2] == "Lawrence"
+        @test df[1, 3] == "Powell"
+        @test isapprox(df[1, 4], 87216.8; atol=0.01)
+        @test isapprox(df[1, 5], 26.47; atol=0.01)
+        @test df[1, 6] == Date(2002, 4, 9)
+        @test df[1, 7] == DateTime(2002, 1, 17, 21, 32, 0)
 
-        @test testnull(df[end, 1], 70000)
-        @test testnull(df[end, 2], "Craig")
-        @test testnull(df[end, 3], "Robertson")
-        @test isnull(df[end, 4])
-        @test isnull(df[end, 5])
-        @test testnull(df[end, 6], Date(2008, 6, 23))
-        @test testnull(df[end, 7], DateTime(2005, 4, 18, 7, 2, 0))
+        @test df[end, 1] == 70000
+        @test df[end, 2] == "Craig"
+        @test df[end, 3] == "Robertson"
+        @test isapprox(df[end, 4], 67398.43; atol=0.01)
+        @test isapprox(df[end, 5], 23.99; atol=0.01)
+        @test df[end, 6] == Date(2008, 6, 23)
+        @test df[end, 7] == DateTime(2005, 4, 18, 7, 2, 0)
     end
 end
+
+source = csvsource
+sink = dfsink
 
 function teststream(sources, sinks; rows=70000)
     for source in sources
@@ -205,7 +198,7 @@ function teststream(sources, sinks; rows=70000)
             sinst = sink.constructor(sink.args...)
             si = sink.highlevel(sinst, source.constructor, source.args...; transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
             DataStreamsIntegrationTests.check(sink.sinktodf(si), rows, false, true)
-            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) args + append + transforms`")
+            println("[$(now())]: Sink: $(sink.name) => Source: $(source.name) args + append + transforms")
             sinst = sink.constructor(sink.args...; append=true)
             si = sink.highlevel(sinst, source.constructor, source.args...; append=true, transforms=DataStreamsIntegrationTests.gettransforms(source, sink))
             DataStreamsIntegrationTests.check(sink.sinktodf(si), rows, true, true)
